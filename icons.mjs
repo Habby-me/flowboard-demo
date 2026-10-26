@@ -1,0 +1,28 @@
+const paths = {
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  board: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16m6-16v16M6 8v4m6-4v7m6-7v3"/>',
+  check: '<path d="m6 12 4 4 8-8"/>',
+  circleCheck: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>',
+  arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
+  down: '<path d="m7 10 5 5 5-5"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 11h18"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  flag: '<path d="M5 21V4c5-4 9 4 14 0v10c-5 4-9-4-14 0"/>',
+  bolt: '<path d="m13 2-9 12h7l-1 8 10-12h-8l1-8Z"/>',
+  more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/>',
+  upload: '<path d="M12 15V3m-5 5 5-5 5 5M4 16v4h16v-4"/>',
+  moon: '<path d="M20 14A9 9 0 0 1 10 3a9 9 0 1 0 10 11Z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 0 1 6 0c0 2-3 2-3 4m0 3h.01"/>',
+  close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>',
+  bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
+  github: '<path d="M9 19c-4 1-4-2-6-2m12 5v-4c0-1 .4-2 1-2 4-.5 6-2 6-6 0-2-.5-3-1.5-4 .5-1 .5-3-.5-4-2 0-3 1-4 1.5a14 14 0 0 0-8 0C7 3 6 2 4 2c-1 1-1 3-.5 4C2.5 7 2 8 2 10c0 4 2 5.5 6 6 .6 0 1 1 1 2v4"/>',
+  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  restore: '<path d="M3 11a9 9 0 1 1 3 7M3 4v7h7"/>'
+};
+export const icon = (name, cls = '') => `<svg class="icon ${cls}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.grid}</svg>`;
