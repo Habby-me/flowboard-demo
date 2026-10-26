@@ -1,0 +1,15 @@
+{
+  "name": "flowboard-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A small, complete project board with a Node.js + SQLite backend and a browser-local preview.",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "build": "node build.mjs",
+    "test": "node --test test.mjs",
+    "check": "node --check app.mjs && node --check model.mjs && node --check server.mjs"
+  }
+}
