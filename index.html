@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#202d3b">
+  <meta name="description" content="FlowBoard，给想法一个有条不紊的开始。轻量任务看板、项目进度与个人工作空间。">
+  <title>FlowBoard · 轻量项目协作</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.mjs"></script>
+</head>
+<body>
+  <div id="app"><div class="loading"><span class="brand-mark">f</span><p>正在打开你的工作空间…</p></div></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <dialog id="task-dialog" aria-labelledby="task-dialog-title">
+    <form id="task-form">
+      <div class="dialog-heading"><div><span class="eyebrow">MAKE IT HAPPEN</span><h2 id="task-dialog-title">新建任务</h2></div><button class="icon-button" type="button" data-action="close-dialog" aria-label="关闭任务窗口">✕</button></div>
+      <input type="hidden" name="id">
+      <label>任务名称 <span class="required">*</span><input name="title" placeholder="下一件值得完成的事…" required maxlength="100"></label>
+      <label>任务描述<textarea name="description" rows="3" maxlength="2000" placeholder="补充背景、目标或验收标准"></textarea></label>
+      <div class="form-grid">
+        <label>所属项目<select name="project"><option value="product">产品研发</option><option value="design">品牌设计</option><option value="growth">增长实验</option></select></label>
+        <label>任务状态<select name="status"><option value="todo">待开始</option><option value="doing">进行中</option><option value="done">已完成</option></select></label>
+        <label>优先级<select name="priority"><option value="medium">中优先级</option><option value="high">高优先级</option><option value="low">低优先级</option></select></label>
+        <label>负责人<select name="assignee"><option value="H">Habby（我）</option><option value="L">林可</option><option value="C">陈晨</option><option value="Z">周一</option></select></label>
+        <label>截止日期<input type="date" name="due"></label>
+        <label>标签<input name="tag" maxlength="20" placeholder="例如：前端开发"></label>
+      </div>
+      <p id="form-error" class="form-error" role="alert"></p>
+      <div class="dialog-footer"><button type="button" class="button danger" id="delete-task" hidden>删除任务</button><div class="spacer"></div><button type="button" class="button" data-action="close-dialog">取消</button><button type="submit" class="button primary" id="save-task">创建任务</button></div>
+    </form>
+  </dialog>
+  <dialog id="info-dialog" aria-labelledby="info-title"><div id="info-content"></div></dialog>
+</body>
+</html>
