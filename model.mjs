@@ -45,9 +45,41 @@ export function validateTasks(input) {
   });
 }
 
-export function filterTasks(tasks, { query = '', project = 'all', priority = 'all', assignee = 'all' } = {}) {
+export function filterTasks(tasks, { query = '', project = 'all', priority = 'all', assignee = 'all', status = 'all', today = localDate() } = {}) {
   const search = query.trim().toLocaleLowerCase();
-  return tasks.filter(t => (project === 'all' || t.project === project) && (priority === 'all' || t.priority === priority) && (assignee === 'all' || t.assignee === assignee) && (!search || [t.title, t.description, t.id, t.tag].some(v => v.toLocaleLowerCase().includes(search))));
+  return tasks.filter(t => (project === 'all' || t.project === project)
+    && (priority === 'all' || t.priority === priority)
+    && (assignee === 'all' || t.assignee === assignee)
+    && (status === 'all' || (status === 'overdue' ? t.due && t.due < today && t.status !== 'done' : t.status === status))
+    && (!search || [t.title, t.description, t.id, t.tag].some(v => v.toLocaleLowerCase().includes(search))));
+}
+
+export const SORTS = { manual: '默认顺序', due: '截止日期最近', priority: '优先级最高', newest: '最近创建' };
+
+export function sortTasks(tasks, order = 'manual') {
+  const result = [...tasks];
+  const weight = { high: 0, medium: 1, low: 2 };
+  const comparators = {
+    due: (a, b) => (a.due || '9999-99-99').localeCompare(b.due || '9999-99-99'),
+    priority: (a, b) => weight[a.priority] - weight[b.priority],
+    newest: (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)
+  };
+  return comparators[order] ? result.sort(comparators[order]) : result;
+}
+
+export function parseBackup(text) {
+  if (new TextEncoder().encode(text).length > 2 * 1024 * 1024) throw new Error('备份文件不能超过 2 MB。');
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error('文件不是有效的 JSON，未修改现有任务。'); }
+  if (Array.isArray(data)) return validateTasks(data);
+  if (!data || typeof data !== 'object' || data.app !== 'FlowBoard' || data.version !== 1) throw new Error('不支持的备份格式或版本，请选择 FlowBoard v1 备份。');
+  return validateTasks(data.tasks);
+}
+
+export function mergeTasks(current, incoming) {
+  const merged = new Map(validateTasks(current).map(task => [task.id, task]));
+  for (const task of validateTasks(incoming)) merged.set(task.id, task);
+  return validateTasks([...merged.values()]);
 }
 
 export function summarize(tasks, today = localDate()) {
