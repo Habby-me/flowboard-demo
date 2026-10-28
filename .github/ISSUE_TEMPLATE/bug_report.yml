@@ -1,0 +1,28 @@
+name: Bug report / 问题反馈
+description: Report a reproducible problem in FlowBoard.
+title: '[Bug] '
+body:
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 运行方式
+      options: [GitHub Pages, Node.js + SQLite, Browser preview]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 描述最小复现过程，避免包含私人任务或凭据。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果与实际结果
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 浏览器 / 系统 / Node.js 版本

@@ -1,15 +1,22 @@
 {
   "name": "flowboard-demo",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/Habby-me/flowboard-demo.git" },
+  "bugs": { "url": "https://github.com/Habby-me/flowboard-demo/issues" },
+  "homepage": "https://habby-me.github.io/flowboard-demo/",
   "type": "module",
   "description": "A small, complete project board with a Node.js + SQLite backend and a browser-local preview.",
   "engines": { "node": ">=22.13.0" },
   "scripts": {
     "start": "node server.mjs",
     "dev": "node --watch server.mjs",
+    "preview": "node server.mjs --static",
     "build": "node build.mjs",
     "test": "node --test test.mjs",
-    "check": "node --check app.mjs && node --check model.mjs && node --check server.mjs"
+    "test:coverage": "node --test --experimental-test-coverage test.mjs",
+    "check": "node --check app.mjs && node --check model.mjs && node --check storage.mjs && node --check server.mjs && node --check build.mjs && node --check test.mjs",
+    "verify": "npm run check && npm test && npm run build"
   }
 }

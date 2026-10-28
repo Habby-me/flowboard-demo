@@ -1,10 +1,10 @@
-import { STATUSES, PRIORITIES, PROJECTS, MEMBERS, seedTasks, validateTasks, filterTasks, summarize, localDate } from './model.mjs';
+import { STATUSES, PRIORITIES, PROJECTS, MEMBERS, SORTS, seedTasks, validateTasks, filterTasks, sortTasks, parseBackup, mergeTasks, summarize, localDate } from './model.mjs';
 import { icon } from './icons.mjs';
+import { STORAGE_KEY, loadBrowserTasks, saveBrowserTasks, recoverBrowserTasks } from './storage.mjs';
 
 const $ = (selector) => document.querySelector(selector);
 const escape = (value) => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const STORAGE_KEY = 'flowboard.tasks.v1';
-const state = { tasks: [], query: '', project: 'all', priority: 'all', assignee: 'all', page: 'board', view: 'board', revision: 0, backend: false, saving: false, activity: [], theme: 'light' };
+const state = { tasks: [], query: '', project: 'all', priority: 'all', assignee: 'all', status: 'all', sort: 'manual', page: 'board', view: 'board', revision: 0, backend: false, saving: false, activity: [], theme: 'light' };
 let toastTimer, undoAction, deleteArmed = false;
 
 function toast(message, undo) {
@@ -37,17 +37,20 @@ async function request(path, options) {
 async function load() {
   try {
     state.theme = localStorage.getItem('flowboard.theme') || 'light';
+    const preferences = JSON.parse(localStorage.getItem('flowboard.preferences.v1') || '{}');
+    if (preferences && Object.hasOwn(SORTS, preferences.sort)) state.sort = preferences.sort;
+    if (preferences && ['board', 'list'].includes(preferences.view)) state.view = preferences.view;
     const activity = JSON.parse(localStorage.getItem('flowboard.activity.v1') || '[]');
     if (Array.isArray(activity)) state.activity = activity.filter(a => a && typeof a.message === 'string' && Number.isFinite(Date.parse(a.time))).slice(0, 30);
   } catch { /* Optional preferences can be reset without touching task data. */ }
   document.documentElement.dataset.theme = state.theme;
-  if (['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) {
+  const mode = new URLSearchParams(location.search).get('storage') || $('meta[name="flowboard-storage"]')?.content || 'browser';
+  if (!['browser', 'sqlite'].includes(mode)) throw new Error('无效的存储模式，请使用 browser 或 sqlite。');
+  if (mode === 'sqlite') {
     const data = await request('/api/board');
     state.tasks = validateTasks(data.tasks); state.revision = data.revision; state.backend = true;
   } else {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    state.tasks = raw === null ? seedTasks() : validateTasks(JSON.parse(raw));
-    if (raw === null) localStorage.setItem(STORAGE_KEY, JSON.stringify(state.tasks));
+    state.tasks = loadBrowserTasks(localStorage);
   }
   renderShell();
 }
@@ -60,7 +63,7 @@ async function persist(tasks, message) {
     if (state.backend) {
       const result = await request('/api/board', { method: 'PUT', body: JSON.stringify({ tasks: normalized, expectedRevision: state.revision }) });
       state.revision = result.revision;
-    } else localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    } else saveBrowserTasks(localStorage, normalized);
     state.tasks = normalized;
     if (message) record(message);
     renderContent();
@@ -70,12 +73,17 @@ async function persist(tasks, message) {
   } finally { state.saving = false; }
 }
 
+function savePreferences() {
+  try { localStorage.setItem('flowboard.preferences.v1', JSON.stringify({ sort: state.sort, view: state.view })); }
+  catch { toast('视图已更新，本次偏好无法永久保存。'); }
+}
+
 const avatar = (id, cls = '') => `<span class="avatar avatar-${id} ${cls}" title="${MEMBERS[id]}">${id === 'H' ? 'H' : MEMBERS[id].slice(0, 1)}</span>`;
 function renderShell() {
   $('#app').innerHTML = `<div class="shell">
     <div class="sidebar-backdrop" data-action="menu"></div>
     <aside class="sidebar" aria-label="工作空间导航">
-      <a class="brand" href="#" data-action="home"><span class="brand-mark">f</span>flowboard<span style="color:#8191a2;font-size:9px;letter-spacing:0;align-self:start;margin-top:8px">®</span></a>
+      <a class="brand" href="#" data-action="home"><span class="brand-mark">f</span>flowboard</a>
       <div class="workspace"><span class="workspace-icon">H.</span><div><strong>Habby 的工作空间</strong><small>PERSONAL WORKSPACE</small></div></div>
       <div class="nav-label">工作空间</div>
       <nav class="nav-list">
@@ -93,7 +101,7 @@ function renderShell() {
 }
 
 function visibleTasks() {
-  return filterTasks(state.tasks, { ...state, assignee: state.page === 'mine' ? 'H' : state.assignee });
+  return sortTasks(filterTasks(state.tasks, { ...state, assignee: state.page === 'mine' ? 'H' : state.assignee }), state.sort);
 }
 
 function renderContent() {
@@ -113,14 +121,14 @@ function renderContent() {
   const hint = state.page === 'mine' ? '这里是分配给 Habby 的任务，给今天一点清晰的方向。' : '一个轻盈的工作空间，把计划、协作与进展，放在一起。';
   $('#content').innerHTML = `<div class="page-heading"><div><span class="eyebrow"><span class="tiny-dot"></span>YOUR IDEAS, IN MOTION</span><h1>${heading}</h1><p>${hint}</p></div><div class="heading-controls"><button class="button" data-action="import">${icon('upload')}<span class="import-label">导入</span></button><button class="button" data-action="export">${icon('download')}<span class="export-label">导出数据</span></button><button class="button primary" data-action="new">${icon('plus')}新建任务</button><input id="import-file" type="file" accept="application/json,.json" class="sr-only" aria-label="选择任务备份文件"></div></div>
     <section class="stats" aria-label="${state.project === 'all' ? '全部项目' : PROJECTS[state.project]}任务统计">${[
-      ['grid', '全部任务', summary.total, '让目标清晰可见'],
-      ['clock', '进行中', summary.doing, '正在向前推进'],
-      ['circleCheck', '已完成', summary.done, `完成率 ${summary.percent}%`],
-      ['flag', '待关注', summary.overdue, summary.overdue ? '已过截止日期' : '一切都在计划中']
-    ].map(([symbol, label, value, note]) => `<div class="stat-card"><div class="stat-top"><span class="stat-symbol">${icon(symbol)}</span>${label}</div><div class="stat-bottom"><span class="stat-value">${String(value).padStart(2, '0')}</span><span class="stat-note">${note}</span></div><div class="stat-decor" aria-hidden="true">${[9, 15, 12, 22, 18, 26].map(height => `<i style="height:${height}px"></i>`).join('')}</div></div>`).join('')}</section>
-    <section class="board-section" aria-label="任务工作区"><div class="section-heading"><div class="section-title"><h2>${state.project === 'all' ? (state.page === 'mine' ? '我的工作清单' : '全部项目') : PROJECTS[state.project]}</h2><span class="demo-badge">DEMO 1.0</span></div><div class="collaborators"><div class="avatar-stack">${Object.keys(MEMBERS).map(id => avatar(id)).join('')}</div><span>演示成员</span></div></div>
+      ['grid', '全部任务', summary.total, '让目标清晰可见', 'all'],
+      ['clock', '进行中', summary.doing, '正在向前推进', 'doing'],
+      ['circleCheck', '已完成', summary.done, `完成率 ${summary.percent}%`, 'done'],
+      ['flag', '待关注', summary.overdue, summary.overdue ? '已过截止日期' : '一切都在计划中', 'overdue']
+    ].map(([symbol, label, value, note, filter]) => `<button class="stat-card" data-quickfilter="${filter}" aria-label="筛选${label}" aria-pressed="${state.status === filter && state.page !== 'overview'}"><div class="stat-top"><span class="stat-symbol">${icon(symbol)}</span>${label}</div><div class="stat-bottom"><span class="stat-value">${String(value).padStart(2, '0')}</span><span class="stat-note">${note}</span></div><div class="stat-decor" aria-hidden="true">${[9, 15, 12, 22, 18, 26].map(height => `<i style="height:${height}px"></i>`).join('')}</div></button>`).join('')}</section>
+    <section class="board-section" aria-label="任务工作区"><div class="section-heading"><div class="section-title"><h2>${state.project === 'all' ? (state.page === 'mine' ? '我的工作清单' : '全部项目') : PROJECTS[state.project]}</h2><span class="demo-badge">v1.1.0</span></div><div class="collaborators"><div class="avatar-stack">${Object.keys(MEMBERS).map(id => avatar(id)).join('')}</div><span>演示成员</span></div></div>
     <div class="board-toolbar">${state.page !== 'overview' ? `<div class="view-switch" aria-label="视图切换"><button class="view-button ${state.view === 'board' ? 'active' : ''}" data-view="board" aria-pressed="${state.view === 'board'}">${icon('board')}看板</button><button class="view-button ${state.view === 'list' ? 'active' : ''}" data-view="list" aria-pressed="${state.view === 'list'}">${icon('list')}列表</button></div>` : '<span class="results-count">项目进展一览</span>'}
-    <div class="filters"><select id="project-filter" aria-label="筛选项目"><option value="all">全部项目</option>${Object.entries(PROJECTS).map(([id, title]) => `<option value="${id}" ${state.project === id ? 'selected' : ''}>${title}</option>`).join('')}</select>${state.page !== 'overview' ? `<select id="priority-filter" aria-label="筛选优先级"><option value="all">全部优先级</option>${Object.entries(PRIORITIES).map(([id, title]) => `<option value="${id}" ${state.priority === id ? 'selected' : ''}>${title}</option>`).join('')}</select>${state.page !== 'mine' ? `<select id="assignee-filter" aria-label="筛选负责人"><option value="all">全部成员</option>${Object.entries(MEMBERS).map(([id, title]) => `<option value="${id}" ${state.assignee === id ? 'selected' : ''}>${title}</option>`).join('')}</select>` : ''}<span class="results-count">${tasks.length} 个任务</span>` : ''}${state.project !== 'all' || state.priority !== 'all' || state.assignee !== 'all' || state.query ? '<button class="reset-filters" data-action="reset-filters">重置</button>' : ''}</div></div>
+    <div class="filters"><select id="project-filter" aria-label="筛选项目"><option value="all">全部项目</option>${Object.entries(PROJECTS).map(([id, title]) => `<option value="${id}" ${state.project === id ? 'selected' : ''}>${title}</option>`).join('')}</select>${state.page !== 'overview' ? `<select id="priority-filter" aria-label="筛选优先级"><option value="all">全部优先级</option>${Object.entries(PRIORITIES).map(([id, title]) => `<option value="${id}" ${state.priority === id ? 'selected' : ''}>${title}</option>`).join('')}</select>${state.page !== 'mine' ? `<select id="assignee-filter" aria-label="筛选负责人"><option value="all">全部成员</option>${Object.entries(MEMBERS).map(([id, title]) => `<option value="${id}" ${state.assignee === id ? 'selected' : ''}>${title}</option>`).join('')}</select>` : ''}<select id="status-filter" aria-label="筛选任务状态"><option value="all">全部状态</option>${[...Object.entries(STATUSES), ['overdue', '仅看逾期']].map(([id, title]) => `<option value="${id}" ${state.status === id ? 'selected' : ''}>${title}</option>`).join('')}</select><select id="sort-order" aria-label="任务排序">${Object.entries(SORTS).map(([id, title]) => `<option value="${id}" ${state.sort === id ? 'selected' : ''}>${title}</option>`).join('')}</select><span class="results-count" role="status">${tasks.length} 个任务</span>` : ''}${state.project !== 'all' || state.priority !== 'all' || state.assignee !== 'all' || state.status !== 'all' || state.query ? '<button class="reset-filters" data-action="reset-filters">重置</button>' : ''}</div></div>
     ${state.page === 'overview' ? overview(scoped) : state.view === 'list' ? list(tasks) : board(tasks)}</section>
     <footer class="page-footer"><span class="storage-state"><span class="storage-dot"></span>${state.backend ? 'SQLite · 已保存至本机数据库' : '浏览器本地存储 · 自动保存'}<span class="storage-tip">&nbsp; / &nbsp;${state.backend ? '单机工作空间' : '当前浏览器专属'}</span></span><a href="https://github.com/Habby-me/flowboard-demo" target="_blank" rel="noopener noreferrer">${icon('github')}FlowBoard · 从想法到完成 ${icon('arrow')}</a></footer>`;
 }
@@ -173,12 +181,14 @@ function info(title, content) {
 }
 
 document.addEventListener('click', async event => {
+  const quick = event.target.closest('[data-quickfilter]');
+  if (quick) { state.status = quick.dataset.quickfilter; if (state.page === 'overview') state.page = 'board'; renderContent(); return; }
   const nav = event.target.closest('[data-page]');
-  if (nav) { state.page = nav.dataset.page; state.project = 'all'; state.priority = 'all'; state.assignee = 'all'; renderContent(); $('.sidebar').classList.remove('open'); $('.sidebar-backdrop').classList.remove('open'); return; }
+  if (nav) { state.page = nav.dataset.page; state.project = 'all'; state.priority = 'all'; state.assignee = 'all'; state.status = 'all'; renderContent(); $('.sidebar').classList.remove('open'); $('.sidebar-backdrop').classList.remove('open'); return; }
   const project = event.target.closest('[data-project]');
   if (project) { state.project = state.project === project.dataset.project ? 'all' : project.dataset.project; if (state.page === 'overview') state.page = 'board'; renderContent(); $('.sidebar').classList.remove('open'); $('.sidebar-backdrop').classList.remove('open'); return; }
   const view = event.target.closest('[data-view]');
-  if (view) { state.view = view.dataset.view; renderContent(); return; }
+  if (view) { state.view = view.dataset.view; savePreferences(); renderContent(); return; }
   const actionNode = event.target.closest('[data-action]');
   if (actionNode) {
     const action = actionNode.dataset.action;
@@ -187,7 +197,7 @@ document.addEventListener('click', async event => {
     if (action === 'close-info') $('#info-dialog').close();
     if (action === 'home') { event.preventDefault(); state.page = 'board'; state.project = 'all'; renderContent(); }
     if (action === 'menu') { $('.sidebar').classList.toggle('open'); $('.sidebar-backdrop').classList.toggle('open'); }
-    if (action === 'reset-filters') { state.query = ''; state.project = 'all'; state.priority = 'all'; state.assignee = 'all'; $('#search').value = ''; renderContent(); }
+    if (action === 'reset-filters') { state.query = ''; state.project = 'all'; state.priority = 'all'; state.assignee = 'all'; state.status = 'all'; $('#search').value = ''; renderContent(); }
     if (action === 'theme') {
       state.theme = state.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = state.theme;
       actionNode.innerHTML = icon(state.theme === 'dark' ? 'sun' : 'moon');
@@ -199,7 +209,7 @@ document.addEventListener('click', async event => {
     }
     if (action === 'import') $('#import-file').click();
     if (action === 'undo' && undoAction) { const undo = undoAction; undoAction = undefined; $('#toast').classList.remove('visible'); try { await undo(); toast('已撤销操作'); } catch (error) { toast(error.message); } }
-    if (action === 'help') info('简单一点，开始就好。', '<h3>管理你的任务</h3><p>点击「新建任务」添加工作；点击任意卡片可以修改描述、负责人、日期和状态。桌面端可直接拖动卡片到另一列，手机端可在编辑窗口切换状态。</p><h3>找到重点</h3><p>顶部搜索支持标题、描述、标签和编号。使用项目、优先级或成员筛选，或打开「我的任务」查看 Habby 的工作。「项目概览」会随任务数据实时变化。</p><h3>数据与运行方式</h3><p>在线演示把任务保存在当前浏览器，刷新仍会保留；本地运行 <code>npm start</code> 则使用 SQLite。成员为演示角色，当前版本为单机工作空间，未接入多人登录与实时协作。</p><h3>快捷操作</h3><p><kbd>⌘ / Ctrl + K</kbd> 搜索任务，<kbd>N</kbd> 新建任务，<kbd>Esc</kbd> 关闭弹窗。导入会按任务编号合并，重复编号以导入内容为准；导出包含全部任务。</p>');
+    if (action === 'help') info('简单一点，开始就好。', '<h3>管理你的任务</h3><p>点击「新建任务」添加工作；点击任意卡片可以修改描述、负责人、日期和状态。桌面端可直接拖动卡片到另一列，手机端可在编辑窗口切换状态。</p><h3>找到重点</h3><p>顶部搜索支持标题、描述、标签和编号。点击统计卡片快速查看进行中、已完成或逾期任务。也可按项目、优先级、成员、状态筛选，并按日期或优先级排序；视图和排序会自动记住。使用项目、优先级或成员筛选，或打开「我的任务」查看 Habby 的工作。「项目概览」会随任务数据实时变化。</p><h3>数据与运行方式</h3><p>在线演示把任务保存在当前浏览器，刷新仍会保留；本地运行 <code>npm start</code> 则使用 SQLite。成员为演示角色，当前版本为单机工作空间，未接入多人登录与实时协作。</p><h3>快捷操作</h3><p><kbd>⌘ / Ctrl + K</kbd> 搜索任务，<kbd>N</kbd> 新建任务，<kbd>Esc</kbd> 关闭弹窗。导入会按任务编号合并，重复编号以导入内容为准；导出包含全部任务。</p>');
     if (action === 'activity') info('最近动态', state.activity.length ? state.activity.slice(0, 12).map(a => `<div class="activity-row">${escape(a.message)}<small>${new Date(a.time).toLocaleString('zh-CN')}</small></div>`).join('') : '<p>还没有操作记录。新建、修改或移动任务后，动态会出现在这里。</p>');
     return;
   }
@@ -239,15 +249,14 @@ document.addEventListener('input', event => {
 });
 
 document.addEventListener('change', async event => {
-  const filters = { 'project-filter': 'project', 'priority-filter': 'priority', 'assignee-filter': 'assignee' };
-  if (filters[event.target.id]) { state[filters[event.target.id]] = event.target.value; renderContent(); }
+  const filters = { 'project-filter': 'project', 'priority-filter': 'priority', 'assignee-filter': 'assignee', 'status-filter': 'status', 'sort-order': 'sort' };
+  if (filters[event.target.id]) { state[filters[event.target.id]] = event.target.value; if (event.target.id === 'sort-order') savePreferences(); renderContent(); }
   if (event.target.id === 'import-file') {
     const file = event.target.files[0]; if (!file) return;
     try {
       if (file.size > 2 * 1024 * 1024) throw new Error('请选择小于 2 MB 的 JSON 文件。');
-      const data = JSON.parse(await file.text()); const imported = validateTasks(Array.isArray(data) ? data : data.tasks);
-      const merged = new Map(state.tasks.map(t => [t.id, t])); imported.forEach(t => merged.set(t.id, t));
-      const before = [...state.tasks]; const after = [...merged.values()];
+      const imported = parseBackup(await file.text());
+      const before = [...state.tasks]; const after = mergeTasks(state.tasks, imported);
       await persist(after, `导入了 ${imported.length} 项任务`);
       const importedSnapshot = JSON.stringify(state.tasks);
       toast(`已合并导入 ${imported.length} 项任务`, () => { if (JSON.stringify(state.tasks) !== importedSnapshot) throw new Error('导入后已有新的更改，为保留这些更改，不能整批撤销。'); return persist(before, '撤销了任务导入'); });
@@ -288,8 +297,12 @@ window.addEventListener('storage', event => {
 });
 
 load().catch(error => {
-  $('#app').innerHTML = `<div class="loading"><div><span class="brand-mark">f</span><h2>工作空间暂时无法打开</h2><p>${escape(error.message)}</p><p>本地运行请先执行 npm start；在线版请检查浏览器存储权限。</p><button class="button primary" id="retry-load">重新加载</button><button class="button" id="backup-raw">备份原始浏览器数据</button></div></div>`;
+  $('#app').innerHTML = `<div class="loading"><div><span class="brand-mark">f</span><h2>工作空间暂时无法打开</h2><p>${escape(error.message)}</p><p>本地运行请先执行 npm start；在线版请检查浏览器存储权限。</p><button class="button primary" id="retry-load">重新加载</button><button class="button" id="backup-raw">备份原始浏览器数据</button><button class="button" id="recover-tasks">恢复上次有效快照</button></div></div>`;
   $('#retry-load').addEventListener('click', () => location.reload());
+  $('#recover-tasks').addEventListener('click', () => {
+    try { recoverBrowserTasks(localStorage); location.reload(); }
+    catch (error) { toast(error.message); }
+  });
   $('#backup-raw').addEventListener('click', () => {
     try { const raw = localStorage.getItem(STORAGE_KEY) || '[]'; const url = URL.createObjectURL(new Blob([raw], { type: 'application/json' })); const a = document.createElement('a'); a.href = url; a.download = 'flowboard-recovery.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); } catch { toast('无法读取浏览器存储。'); }
   });
